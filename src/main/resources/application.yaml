@@ -1,10 +1,26 @@
-# example values
+server:
+  port: 8080
 
+spring:
+  datasource:
+    username: root
+    password: Belyashik1611!
+    url: jdbc:mysql://localhost:3306/search_engine?useSSL=false&requireSSL=false&allowPublicKeyRetrieval=true
+  jpa:
+    hibernate:
+      ddl-auto: update
+      show-sql: true
 indexing-settings:
   sites:
-    - url: https://www.lenta.ru
-      name: Лента.ру
+    - url: https://www.svetlovka.ru
+      name: Светловка
     - url: https://www.skillbox.ru
       name: Skillbox
-    - url: https://www.playback.ru
-      name: PlayBack.Ru
+    - url: http://radiomv.ru/
+      name: RadioMV
+    - url: https://dimonvideo.ru
+      name: Dimonvideo.ru
+    - url: https://www.lenta.ru
+      name: Лента.ру
+
+
