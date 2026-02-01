@@ -86,10 +86,24 @@
                 <groupId>org.apache.lucene.morphology</groupId>
                 <artifactId>russian</artifactId>
                 <version>1.5</version>
-
-        </dependency>
-
-
+            </dependency>
+                <dependency>
+                    <groupId>org.postgresql</groupId>
+                    <artifactId>postgresql</artifactId>
+                    <scope>runtime</scope>
+                </dependency>
+                <dependency>
+                    <groupId>org.liquibase</groupId>
+                    <artifactId>liquibase-core</artifactId>
+                </dependency>
+                <dependency>
+                    <groupId>org.springframework.retry</groupId>
+                    <artifactId>spring-retry</artifactId>
+                </dependency>
+                <dependency>
+                    <groupId>org.springframework</groupId>
+                    <artifactId>spring-aspects</artifactId>
+                </dependency>
     </dependencies>
     <build>
         <plugins>

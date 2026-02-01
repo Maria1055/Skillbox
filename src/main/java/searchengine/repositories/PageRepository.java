@@ -13,6 +13,7 @@ public interface PageRepository extends JpaRepository<Page, Integer> {
 
     boolean existsBySiteAndPath(Site site, String path);
     Optional<Page> findBySiteAndPath(Site site, String path);
+    @Transactional
     void deleteBySite(Site site);
     long countBySite(Site site);
 }
