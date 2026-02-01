@@ -4,35 +4,28 @@ import jakarta.persistence.*;
 import lombok.Getter;
 import lombok.Setter;
 
-import java.util.List;
-
-
 @Entity
 @Getter
 @Setter
-@Table(name = "page", uniqueConstraints = {
+@Table(name = "page", indexes = {
+        @Index(name = "idx_path", columnList = "path")
+}, uniqueConstraints = {
         @UniqueConstraint(columnNames = {"site_id", "path"})
 })
 public class Page {
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
-    @Column(name="id")
     private Integer id;
 
     @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name="site_id", referencedColumnName = "id", nullable = false)
+    @JoinColumn(name="site_id", nullable = false)
     private Site site;
 
-    @OneToMany(mappedBy = "page", fetch = FetchType.LAZY)
-    private List<IndexModel> indexes;
-
-    @Column(columnDefinition = "VARCHAR(512)", nullable = false)
-    private String path;
-
-    @Column(name="code")
-    private Integer code;
-
-    @Column(name="content", columnDefinition = "MEDIUMTEXT")
+    @Column(columnDefinition = "TEXT", nullable = false)
     private String content;
 
+    @Column(columnDefinition = "TEXT", nullable = false)
+    private String path;
+
+    private Integer code;
 }

@@ -23,7 +23,7 @@ public class Site {
     private Integer id;
 
     @Enumerated(EnumType.STRING)
-    @Column(name="status", columnDefinition = "ENUM('INDEXING', 'INDEXED', 'FAILED')", nullable = false, length = 20)
+    @Column(name="status", nullable = false, length = 20)
     private Status status;
 
     @CreationTimestamp

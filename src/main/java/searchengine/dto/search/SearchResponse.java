@@ -1,6 +1,7 @@
 package searchengine.dto.search;
 
-
+import lombok.EqualsAndHashCode;
+import searchengine.dto.common.Response;
 import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.NoArgsConstructor;
@@ -8,17 +9,15 @@ import lombok.NoArgsConstructor;
 import java.util.List;
 
 @Data
+@EqualsAndHashCode(callSuper = true)
 @NoArgsConstructor
-@AllArgsConstructor
-public class SearchResponse {
-    private boolean result;
+public class SearchResponse extends Response {
     private int count;
     private List<SearchResultDto> data;
-    private String error;
 
 
     public SearchResponse(boolean result, int count, List<SearchResultDto> data) {
-        this.result = result;
+        super(result);
         this.count = count;
         this.data = data;
     }

@@ -5,6 +5,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import searchengine.dto.search.SearchResponse;
 import searchengine.dto.search.SearchResultDto;
+import searchengine.exception.BadRequestException;
 import searchengine.model.IndexModel;
 import searchengine.model.Lemma;
 import searchengine.model.Site;
@@ -30,6 +31,9 @@ public class SearchServiceImpl implements SearchService {
     @Override
     @Transactional(readOnly = true)
     public SearchResponse search(String query, String siteUrl, int offset, int limit) {
+        if (query == null || query.isBlank()) {
+            throw new BadRequestException("Задан пустой поисковый запрос");
+        }
         if (siteUrl != null && !siteUrl.endsWith("/")) {
             siteUrl += "/";
         }

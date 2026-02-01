@@ -18,7 +18,7 @@ public interface IndexRepository extends JpaRepository<IndexModel, Integer> {
 
     List<IndexModel> findByPage(Page page);
     void deleteByPage(Page page);
-    void deleteAllByPage_Site(Site site);
+    void deleteByPageSite(Site site);
     @Query("SELECT i FROM IndexModel i WHERE i.page.id IN :ids AND i.lemma = :lemma")
     List<IndexModel> findByPageIdInAndLemma(@Param("ids") Collection<Integer> ids, @Param("lemma") Lemma lemma);
     List<IndexModel> findByLemma(Lemma lemma);

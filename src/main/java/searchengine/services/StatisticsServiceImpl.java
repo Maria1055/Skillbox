@@ -16,8 +16,7 @@ import searchengine.repositories.PageRepository;
 import searchengine.repositories.SiteRepository;
 
 import java.util.ArrayList;
-import java.util.List;
-import java.util.Random;
+import java.util.List;;
 
 
     @Service
@@ -63,15 +62,12 @@ import java.util.Random;
             total.setPages((int) totalPages);
             total.setLemmas((int) totalLemmas);
 
+
             StatisticsData data = new StatisticsData();
             data.setTotal(total);
             data.setDetailed(detailed);
 
-            StatisticsResponse response = new StatisticsResponse();
-            response.setStatistics(data);
-            response.setResult(true);
-
-            return response;
+            return new StatisticsResponse(true, data);
         }
     }
 

@@ -22,7 +22,7 @@ public class Lemma {
     @JoinColumn(name="site_id", referencedColumnName = "id", nullable = false)
     private Site site;
 
-    @Column(name="lemma", columnDefinition = "VARCHAR(255)")
+    @Column(name="lemma", nullable = false)
     private String lemma;
 
     @Column(name="frequency", nullable = false)

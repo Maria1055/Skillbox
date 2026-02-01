@@ -1,9 +1,8 @@
 package searchengine.dto.indexing;
 
 import lombok.*;
+import searchengine.dto.common.Response;
 
-@Getter
-@Setter
 @EqualsAndHashCode(callSuper = true)
 public class IndexingResponse extends Response {
 

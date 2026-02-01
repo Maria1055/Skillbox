@@ -160,6 +160,7 @@ public class SiteServiceImpl implements SiteService {
 */
 package searchengine.services;
 
+import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.Lazy;
 import org.springframework.stereotype.Service;
@@ -168,7 +169,9 @@ import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 import searchengine.config.SiteConfig;
 import searchengine.config.SitesList;
+import searchengine.dto.common.Response;
 import searchengine.dto.indexing.IndexingResponse;
+import searchengine.exception.BadRequestException;
 import searchengine.forkjoin.SiteIndexer;
 import searchengine.model.*;
 import searchengine.repositories.IndexRepository;
@@ -179,15 +182,17 @@ import searchengine.repositories.SiteRepository;
 import java.time.Instant;
 import java.util.*;
 import java.util.concurrent.*;
-        import java.util.concurrent.atomic.AtomicBoolean;
-
+import java.util.concurrent.atomic.AtomicBoolean;
+@RequiredArgsConstructor
 @Service("indexingService")
 public class SiteServiceImpl implements SiteService {
+
 
     private final SiteRepository siteRepository;
     private final PageRepository pageRepository;
     private final LemmaRepository lemmaRepository;
     private final IndexRepository indexRepository;
+    private final PageIndexer pageIndexer;
     private final LemmaParser lemmaParser;
     private final SitesList sitesList;
     private final PlatformTransactionManager transactionManager;
@@ -197,188 +202,95 @@ public class SiteServiceImpl implements SiteService {
     private final Set<String> visitedUrls = ConcurrentHashMap.newKeySet();
     private ForkJoinPool siteIndexingPool;
 
-    @Autowired
-    public void setSelf(@Lazy SiteService self) {
-        this.self = self;
-    }
-
-    @Autowired
-    public SiteServiceImpl(SiteRepository siteRepository, PageRepository pageRepository,
-                           LemmaRepository lemmaRepository, IndexRepository indexRepository,
-                           LemmaParser lemmaParser, SitesList sitesList,
-                           PlatformTransactionManager transactionManager) {
-        this.siteRepository = siteRepository;
-        this.pageRepository = pageRepository;
-        this.lemmaRepository = lemmaRepository;
-        this.indexRepository = indexRepository;
-        this.lemmaParser = lemmaParser;
-        this.sitesList = sitesList;
-        this.transactionManager = transactionManager;
-    }
 
     @Override
     public IndexingResponse startIndexing() {
-
         if (isIndexingRunning()) {
-            return new IndexingResponse(false, "Индексация уже запущена");
+            throw new BadRequestException("Индексация уже запущена"); // Используем твой ExceptionHandler
         }
+
         indexingRunning.set(true);
         isCanceled.set(false);
         visitedUrls.clear();
 
         CompletableFuture.runAsync(() -> {
             try {
-                self.startIndexingAllSites();
+                startIndexingAllSites(); // ВЫЗОВ НАПРЯМУЮ
             } catch (Exception e) {
                 e.printStackTrace();
             } finally {
                 indexingRunning.set(false);
             }
         });
+
         return new IndexingResponse(true);
     }
-
-    @Override
-    public void startIndexingAllSites() {
+    private void startIndexingAllSites() {
         List<SiteConfig> sites = sitesList.getSites();
-        try {
-            for (SiteConfig siteConfig : sites) {
-                if (isCanceled.get()) break;
-                Site site = self.initializeSite(siteConfig.getUrl());
-                int siteId = site.getId();
-                String siteUrl = site.getUrl();
-                self.indexSite(siteUrl, siteId);
-            }
-        } catch (Exception e) {
-            System.err.println("Ошибка в цикле индексации: " + e.getMessage());
-            e.printStackTrace();
+        for (SiteConfig siteConfig : sites) {
+            if (isCanceled.get()) break;
+
+            Site site = initializeSite(siteConfig.getUrl());
+            indexSite(site.getUrl(), site.getId());
         }
     }
 
-    @Override
+
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     public Site initializeSite(String siteUrl) {
         String name = sitesList.getSites().stream()
                 .filter(s -> s.getUrl().equals(siteUrl))
-                .findFirst().map(SiteConfig::getName).orElse("Unknown");
+                .findFirst()
+                .map(SiteConfig::getName)
+                .orElse("Unknown");
 
-        Optional<Site> existingSite = siteRepository.findByUrl(siteUrl);
-        Site site;
-
-        if (existingSite.isPresent()) {
-            site = existingSite.get();
+        Site site = siteRepository.findByUrl(siteUrl).orElseGet(() -> {
+            Site newSite = new Site();
+            newSite.setUrl(siteUrl);
+            newSite.setName(name);
+            return newSite;
+        });
+        if (site.getId() != null) {
             if (site.getStatus() == Status.INDEXING) {
                 return site;
             }
-
-            indexRepository.deleteAllByPage_Site(site);
-            indexRepository.flush();
-            lemmaRepository.deleteAllBySite(site);
+            indexRepository.deleteByPageSite(site);
+            lemmaRepository.deleteBySite(site);
             pageRepository.deleteBySite(site);
-
-            site.setStatus(Status.INDEXING);
-            site.setLastError(null);
-            site.setStatusTime(Instant.now());
-        }
-        else {
-            site = new Site();
-            site.setUrl(siteUrl);
-            site.setName(name);
-            site.setStatus(Status.INDEXING);
-            site.setStatusTime(Instant.now());
         }
 
-        return siteRepository.saveAndFlush(site);
+        site.setStatus(Status.INDEXING);
+        site.setLastError(null);
+        site.setStatusTime(Instant.now());
+
+        return siteRepository.save(site);
     }
 
 
     @Override
     @Transactional
-    public void savePageIfNew(int siteId, String path, int code, String content) {
-
+    public Page savePageIfNew(int siteId, String path, int code, String content) {
         String cleanPath = path.contains("?") ? path.substring(0, path.indexOf("?")) : path;
         String normalizedPath = (cleanPath.length() > 1 && cleanPath.endsWith("/"))
                 ? cleanPath.substring(0, cleanPath.length() - 1)
                 : cleanPath;
+        Site site = siteRepository.findById(siteId)
+                .orElseThrow(() -> new RuntimeException("Site not found with id: " + siteId));
 
-        Site site = siteRepository.findById(siteId).orElse(null);
-        if (site == null) return;
-        Optional<Page> existingPage = pageRepository.findBySiteAndPath(site, normalizedPath);
-        Page page = existingPage.orElse(new Page());
-        page.setSite(site);
-        page.setPath(normalizedPath);
+        Page page = pageRepository.findBySiteAndPath(site, normalizedPath)
+                .orElseGet(() -> {
+                    Page newPage = new Page();
+                    newPage.setSite(site);
+                    newPage.setPath(normalizedPath);
+                    return newPage;
+                });
+
         page.setCode(code);
         page.setContent(content);
-        pageRepository.saveAndFlush(page);
+
+        return pageRepository.save(page);
     }
 
-    @Override
-    @Transactional(propagation = Propagation.REQUIRES_NEW)
-    public void indexPageContent(Integer pageId) {
-        try {
-            Page page = null;
-            for (int i = 0; i < 5; i++) {
-                page = pageRepository.findById(pageId).orElse(null);
-                if (page != null) break;
-                Thread.sleep(500);
-            }
-
-            if (page == null || page.getContent() == null || page.getContent().length() < 10) {
-                return;
-            }
-
-            Site site = page.getSite();
-            if (site == null) return;
-
-            String text = lemmaParser.clearHtmlFromTags(page.getContent());
-            Map<String, Integer> lemmas = lemmaParser.getLemmaCount(text);
-            if (lemmas.isEmpty()) return;
-
-            List<IndexModel> indexList = new ArrayList<>();
-            Set<String> processedLemmas = new HashSet<>();
-
-            for (Map.Entry<String, Integer> entry : lemmas.entrySet()) {
-                String lemmaText = entry.getKey();
-                if (processedLemmas.contains(lemmaText)) continue;
-                processedLemmas.add(lemmaText);
-
-                try {
-                    lemmaRepository.upsertLemma(lemmaText, site.getId());
-
-                    Optional<Lemma> lemmaOpt = lemmaRepository.findByLemmaAndSite(lemmaText, site);
-
-                    if (lemmaOpt.isEmpty()) {
-                        Thread.sleep(10);
-                        lemmaOpt = lemmaRepository.findByLemmaAndSite(lemmaText, site);
-                    }
-
-                    if (lemmaOpt.isPresent()) {
-                        Lemma lemma = lemmaOpt.get();
-
-                        if (lemma instanceof org.hibernate.proxy.HibernateProxy) {
-                            lemma = (Lemma) ((org.hibernate.proxy.HibernateProxy) lemma)
-                                    .getHibernateLazyInitializer().getImplementation();
-                        }
-                        IndexModel index = new IndexModel();
-                        index.setPage(page);
-                        index.setLemma(lemma);
-                        index.setRank(entry.getValue().floatValue());
-                        indexList.add(index);
-                    }
-                } catch (Exception ex) {
-                    System.err.println("WARN: Ошибка при обработке леммы '" + lemmaText + "': " + ex.getMessage());
-                }
-            }
-            if (!indexList.isEmpty()) {
-                indexRepository.saveAll(indexList);
-                indexRepository.flush();
-            }
-
-        } catch (Exception e) {
-            System.err.println("CRITICAL ERROR indexing page ID " + pageId + ": " + e.getMessage());
-            e.printStackTrace();
-        }
-    }
 
     @Override
     public IndexingResponse stopIndexing() {
@@ -396,7 +308,6 @@ public class SiteServiceImpl implements SiteService {
     }
 
 
-    @Override
     public boolean isIndexingRunning() {
         return indexingRunning.get();
     }
@@ -407,54 +318,61 @@ public class SiteServiceImpl implements SiteService {
     }
 
 
-    @Override
-    public void indexSite(String url, int siteId) {
+    private void indexSite(String url, int siteId) {
         System.out.println("DEBUG: Начинаю индексацию сайта: " + url);
-        Site site = null;
-        for (int i = 0; i < 20; i++) {
-            site = siteRepository.findById(siteId).orElse(null);
-            if (site != null) break;
-            try { Thread.sleep(500); } catch (InterruptedException ignored) {}
-        }
 
-        if (site == null) {
-            System.err.println("CRITICAL: Сайт не найден в БД даже после ожидания. ID: " + siteId);
-            return;
-        }
-        ForkJoinPool pool = new ForkJoinPool(1);
+        Site site = siteRepository.findById(siteId).orElseThrow(() ->
+                new RuntimeException("CRITICAL: Сайт не найден в БД. ID: " + siteId));
+
+        ForkJoinPool pool = new ForkJoinPool(4);
         try {
-            SiteIndexer indexer = new SiteIndexer(url, siteId, url, self, pageRepository, siteRepository);
+            SiteIndexer indexer = new SiteIndexer(
+                    url,
+                    siteId,
+                    url,
+                    this,
+                    pageRepository,
+                    siteRepository,
+                    pageIndexer
+            );
+
             pool.invoke(indexer);
+
             if (!isCanceled.get()) {
-                self.updateSiteStatus(siteId, Status.INDEXED, null);
+                updateSiteStatus(siteId, Status.INDEXED, null);
             }
         } catch (Exception e) {
             System.err.println("ОШИБКА ИНДЕКСАЦИИ " + url + ": " + e.getMessage());
-            self.updateSiteStatus(siteId, Status.FAILED, e.getMessage());
+            updateSiteStatus(siteId, Status.FAILED, e.getMessage());
         } finally {
             pool.shutdown();
         }
-
     }
-
 
     @Override
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     public void updateSiteStatus(int siteId, Status status, String error) {
-        Site site = siteRepository.findById(siteId).orElseThrow();
+        Site site = siteRepository.findById(siteId)
+                .orElseThrow(() -> new RuntimeException("Site not found with id: " + siteId));
+
         site.setStatus(status);
         site.setStatusTime(Instant.now());
+
         if (error != null) {
             site.setLastError(error.length() > 250 ? error.substring(0, 250) : error);
         } else {
             site.setLastError(null);
         }
-        siteRepository.saveAndFlush(site);
+
+        siteRepository.save(site);
     }
 
 
     @Override
-    public boolean indexSinglePage(String url) {
+    public Response indexSinglePage(String url) {
+        if (url == null || url.isBlank()) {
+            throw new BadRequestException("URL не задан");
+        }
 
         String rootUrl = sitesList.getSites().stream()
                 .map(SiteConfig::getUrl)
@@ -463,7 +381,7 @@ public class SiteServiceImpl implements SiteService {
                 .orElse(null);
 
         if (rootUrl == null) {
-            return false;
+            throw new BadRequestException("Данная страница находится за пределами сайтов из конфигурации");
         }
         CompletableFuture.runAsync(() -> {
             try {
@@ -479,7 +397,7 @@ public class SiteServiceImpl implements SiteService {
             }
         });
 
-        return true;
+        return new Response(true);
     }
 
     private void processSinglePage(String url, String rootUrl) {
@@ -489,17 +407,16 @@ public class SiteServiceImpl implements SiteService {
             newSite.setName(extractDomainName(rootUrl));
             newSite.setStatus(Status.INDEXED);
             newSite.setStatusTime(Instant.now());
-            return siteRepository.saveAndFlush(newSite);
+            return siteRepository.save(newSite);
         });
 
         String path = url.replace(rootUrl, "");
         if (path.isEmpty()) path = "/";
 
         try {
-            pageRepository.findBySiteAndPath(site, path).ifPresent(page -> {
-                indexRepository.deleteByPage(page);
+            Optional<Page> existingPage = pageRepository.findBySiteAndPath(site, path);
 
-            });
+            existingPage.ifPresent(this::deletePageIndexes);
 
             org.jsoup.Connection.Response response = org.jsoup.Jsoup.connect(url)
                     .userAgent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
@@ -510,14 +427,20 @@ public class SiteServiceImpl implements SiteService {
 
             String htmlContent = response.parse().html();
 
-            self.savePageIfNew(site.getId(), path, response.statusCode(), htmlContent);
+            savePageIfNew(site.getId(), path, response.statusCode(), htmlContent);
 
-            System.out.println("DEBUG: Страница " + url + " успешно переиндексирована.");
+
+            pageRepository.findBySiteAndPath(site, path).ifPresent(p -> {
+                pageIndexer.indexPageContent(p.getId());
+            });
+
+            System.out.println("DONE: Страница " + url + " переиндексирована.");
 
         } catch (java.io.IOException e) {
             System.err.println("Ошибка при переиндексации страницы " + url + ": " + e.getMessage());
         }
     }
+
 
     @Override
     public boolean addVisitedUrlFilter(String url) {
@@ -552,17 +475,25 @@ public class SiteServiceImpl implements SiteService {
 
         for (IndexModel index : pageIndexes) {
             Lemma lemma = index.getLemma();
-            if (lemma.getFrequency() > 1) {
-                lemma.setFrequency(lemma.getFrequency() - 1);
+            int currentFreq = lemma.getFrequency();
+
+            if (currentFreq > 1) {
+                lemma.setFrequency(currentFreq - 1);
                 lemmasToUpdate.add(lemma);
             } else {
                 lemmasToDelete.add(lemma);
             }
         }
-        indexRepository.deleteAllInBatch(pageIndexes); // Удаляем индексы
-        if (!lemmasToUpdate.isEmpty()) lemmaRepository.saveAll(lemmasToUpdate);
-        if (!lemmasToDelete.isEmpty()) lemmaRepository.deleteAll(lemmasToDelete);
 
-        System.out.println("DEBUG: Очищены индексы и обновлены леммы для: " + page.getPath());
+        indexRepository.deleteAllInBatch(pageIndexes);
+
+        if (!lemmasToUpdate.isEmpty()) {
+            lemmaRepository.saveAll(lemmasToUpdate);
+        }
+        if (!lemmasToDelete.isEmpty()) {
+            lemmaRepository.deleteAllInBatch(lemmasToDelete);
+        }
+
     }
+
 }

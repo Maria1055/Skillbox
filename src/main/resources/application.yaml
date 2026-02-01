@@ -3,13 +3,24 @@ server:
 
 spring:
   datasource:
-    username: root
-    password: Belyashik1611!
-    url: jdbc:mysql://localhost:3306/search_engine?useSSL=false&requireSSL=false&allowPublicKeyRetrieval=true
+    username: mariakirnitskaya
+    password:
+    url: jdbc:postgresql://localhost:5432/search_engine
+    driver-class-name: org.postgresql.Driver
+
   jpa:
+    database-platform: org.hibernate.dialect.PostgreSQLDialect
     hibernate:
-      ddl-auto: update
-      show-sql: true
+      ddl-auto: validate
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.PostgreSQLDialect # Для уверенности
+
+  liquibase:
+    # Убедись, что путь начинается с classpath:
+    change-log: classpath:db/changelog/db.changelog-master.xml
+    enabled: true
+
 indexing-settings:
   sites:
     - url: https://www.svetlovka.ru
@@ -22,5 +33,3 @@ indexing-settings:
       name: Dimonvideo.ru
     - url: https://www.lenta.ru
       name: Лента.ру
-
-
