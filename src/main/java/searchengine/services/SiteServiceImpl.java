@@ -206,7 +206,7 @@ public class SiteServiceImpl implements SiteService {
     @Override
     public IndexingResponse startIndexing() {
         if (isIndexingRunning()) {
-            throw new BadRequestException("Индексация уже запущена"); // Используем твой ExceptionHandler
+            throw new BadRequestException("Индексация уже запущена");
         }
 
         indexingRunning.set(true);
@@ -215,7 +215,7 @@ public class SiteServiceImpl implements SiteService {
 
         CompletableFuture.runAsync(() -> {
             try {
-                startIndexingAllSites(); // ВЫЗОВ НАПРЯМУЮ
+                startIndexingAllSites();
             } catch (Exception e) {
                 e.printStackTrace();
             } finally {
@@ -301,7 +301,7 @@ public class SiteServiceImpl implements SiteService {
         isCanceled.set(true);
         if (siteIndexingPool != null) {
             siteIndexingPool.shutdownNow();
-            System.out.println("DEBUG: ForkJoinPool принудительно остановлен.");// Принудительно останавливаем потоки
+            System.out.println("DEBUG: ForkJoinPool принудительно остановлен.");
         }
         indexingRunning.set(false);
         return new IndexingResponse(true);

@@ -14,10 +14,9 @@ spring:
       ddl-auto: validate
     properties:
       hibernate:
-        dialect: org.hibernate.dialect.PostgreSQLDialect # Для уверенности
+        dialect: org.hibernate.dialect.PostgreSQLDialect
 
   liquibase:
-    # Убедись, что путь начинается с classpath:
     change-log: classpath:db/changelog/db.changelog-master.xml
     enabled: true
 
